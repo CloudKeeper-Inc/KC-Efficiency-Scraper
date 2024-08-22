@@ -2,6 +2,9 @@
 
 This Go script fetches data from the Kubecost Allocation API to retrieve efficiency metrics.
 
+Written by -
+[Akash Sawan at CloudKeeper](https://github.com/akashsawan1)
+
 ## Prerequisites
 
 - Go (Golang) installed on your machine
