@@ -12,11 +12,12 @@ import (
 	"sync"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"time"
 )
 
 func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
-	defer wg.Done()
 
+	wg.Done()
 	u, err := url.Parse(inputURL)
 	if err != nil {
 		configs.ErrorLogger.Println("Error parsing URL:", err)
@@ -29,9 +30,20 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 	q.Set("accumulate", "true")
 	u.RawQuery = q.Encode()
 
-	resp, err := http.Get(u.String())
+	newURL := u.String()
+	var resp *http.Response
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err = http.Get(newURL)
+		if err == nil {
+			break
+		}
+		configs.ErrorLogger.Printf("Attempt %d: Error making HTTP request: %v\n", attempt, err)
+		time.Sleep(2 * time.Second)
+	}
+
 	if err != nil {
-		configs.ErrorLogger.Println("Error making HTTP request:", err)
+		configs.ErrorLogger.Println("Failed to make HTTP request after multiple attempts:", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -102,26 +114,46 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 	}
 
 	for _, element := range data {
+		if element == nil{
+			continue
+		}
 		serviceMap := element.(map[string]interface{})
 
 		for _, serviceData := range serviceMap {
 			serviceOne := serviceData.(map[string]interface{})
 
 			name := serviceOne["name"].(string)
-			if name == "__idle__" {
+			if name == "__unallocated__" {
 				continue
 			}
 
 			properties := serviceOne["properties"].(map[string]interface{})
 
+			var labels map[string]interface{}
 			var region string
-			if name != "__idle__" {
-				labels := properties["labels"].(map[string]interface{})
-				region = labels["topology_kubernetes_io_region"].(string)
+			var namespaceService string
+			
+			if value, ok := properties["namespaceLabels"].(map[string]interface{}); ok {
+				labels = value
+				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
+					namespaceService = val
+				} else {
+					namespaceService = "" 
+				}
+			} else {
+				namespaceService = ""
 			}
 
-			namespaceLabels := properties["namespaceLabels"].(map[string]interface{})
-			namespaceService := namespaceLabels["kubernetes_io_metadata_name"].(string)
+			if value, ok := properties["labels"].(map[string]interface{}); ok {
+				labels = value
+				if val_region, ok := labels["topology_kubernetes_io_region"].(string); ok {
+					region = val_region
+				} else {
+					region = "" 
+				}
+			} else {
+				region = ""
+			}
 
 			window := serviceOne["window"].(map[string]interface{})
 			windowStart := window["start"].(string)

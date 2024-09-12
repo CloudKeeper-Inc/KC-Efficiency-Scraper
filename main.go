@@ -9,7 +9,6 @@ import (
 	"kubecost-efficiency-fetcher/namespace"
 	"kubecost-efficiency-fetcher/node"
 	"kubecost-efficiency-fetcher/pod"
-	// "kubecost-efficiency-fetcher/s3Upload"
 	"kubecost-efficiency-fetcher/service"
 	"sync"
 )
@@ -19,15 +18,15 @@ import (
 func main() {
 
 	wg := &sync.WaitGroup{}
-	wg.Add(6)
+	wg.Add(8)
 	
-	go cluster.FetchAndWriteClusterData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, configs.BucketRegion, wg)
+	go cluster.FetchAndWriteClusterData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, configs.BucketRegion, wg) 
 	
 	go node.FetchAndWriteNodeData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, configs.BucketRegion, wg)
 
 	go pod.FetchAndWritePodData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, configs.BucketRegion, wg)
 
-	go namespace.FetchAndWriteNamespaceData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, wg)
+	go namespace.FetchAndWriteNamespaceData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, wg) 
 	
 	go service.FetchAndWriteServiceData(configs.KubecostEndpoint,configs.ClusterName,configs.Window,configs.BucketName, configs.BucketRegion, wg)
 
