@@ -10,13 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
 
-
+	defer wg.Done()
 	u, err := url.Parse(inputURL)
 	if err != nil {
 		configs.ErrorLogger.Println("Error parsing URL:", err)
@@ -30,12 +31,22 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 	u.RawQuery = q.Encode()
 	newURL := u.String()
 
+	var resp *http.Response
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err = http.Get(newURL)
+		if err == nil {
+			break
+		}
+		configs.ErrorLogger.Printf("Attempt %d: Error making HTTP request: %v\n", attempt, err)
+		time.Sleep(2 * time.Second)
+	}
 
-	resp, err := http.Get(newURL)
 	if err != nil {
-		configs.ErrorLogger.Println("Error making HTTP request:", err)
+		configs.ErrorLogger.Println("Failed to make HTTP request after multiple attempts:", err)
 		return
 	}
+
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -99,7 +110,7 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 
 
 	if !fileExists {
-		header := []string{"Cluster", "Region", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		header := []string{"Cluster", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
 		if err := writer.Write(header); err != nil {
 			configs.ErrorLogger.Println("Error writing header to CSV:", err)
 			return
@@ -107,6 +118,10 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 	}
 
 	for _, element := range data {
+		if element == nil{
+			configs.InfoLogger.Println("No Data for Cluster")
+			continue
+		}
 		clusterMap := element.(map[string]interface{})
 
 		for _, clusterData := range clusterMap {
@@ -118,8 +133,6 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 				cluster = clusterName
 			}
 
-			labels := properties["labels"].(map[string]interface{})
-			region := labels["topology_kubernetes_io_region"].(string)
 
 			window := clusterOne["window"].(map[string]interface{})
 			windowStart := window["start"].(string)
@@ -138,7 +151,7 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 			totalEfficiency := clusterOne["totalEfficiency"].(float64) * 100
 
 			record := []string{
-				cluster, region, windowStart, windowEnd,
+				cluster, windowStart, windowEnd,
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
@@ -169,6 +182,4 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 	}
 
 	configs.InfoLogger.Println("Cluster data successfully written to S3")
-
-	defer wg.Done()
 }

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"time"
 )
 
 func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -28,10 +29,21 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 	q.Set("aggregate", "node")
 	q.Set("accumulate", "true")
 	u.RawQuery = q.Encode()
+	newURL := u.String()
 
-	resp, err := http.Get(u.String())
+	var resp *http.Response
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err = http.Get(newURL)
+		if err == nil {
+			break
+		}
+		configs.ErrorLogger.Printf("Attempt %d: Error making HTTP request: %v\n", attempt, err)
+		time.Sleep(2 * time.Second)
+	}
+
 	if err != nil {
-		configs.ErrorLogger.Println("Error making HTTP request:", err)
+		configs.ErrorLogger.Println("Failed to make HTTP request after multiple attempts:", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -102,19 +114,34 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 	}
 
 	for _, element := range data {
+		if element == nil{
+			configs.InfoLogger.Println("No Data for Node")
+			continue
+		}
 		nodeMap := element.(map[string]interface{})
 
 		for _, nodeData := range nodeMap {
 			nodeOne := nodeData.(map[string]interface{})
 
 			name := nodeOne["name"].(string)
+			if name == "__unallocated__" {
+				continue
+			}
 			properties := nodeOne["properties"].(map[string]interface{})
 			node := properties["node"].(string)
 
+			var labels map[string]interface{}
 			var region string
-			if name != "__idle__" {
-				labels := properties["labels"].(map[string]interface{})
-				region = labels["topology_kubernetes_io_region"].(string)
+			
+			if value, ok := properties["labels"].(map[string]interface{}); ok {
+				labels = value
+				if val, ok := labels["topology_kubernetes_io_region"].(string); ok {
+					region = val
+				} else {
+					region = "" 
+				}	
+			} else {
+				region = ""
 			}
 
 			window := nodeOne["window"].(map[string]interface{})

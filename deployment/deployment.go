@@ -12,9 +12,12 @@ import (
 	"sync"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"time"
 )
 
 func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
+
+	defer wg.Done()
 	u, err := url.Parse(inputURL)
 	if err != nil {
 		configs.ErrorLogger.Println("Error parsing URL:", err)
@@ -27,12 +30,21 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 	q.Set("aggregate", "deployment")
 	q.Set("accumulate", "true")
 	u.RawQuery = q.Encode()
-
 	newURL := u.String()
 
-	resp, err := http.Get(newURL)
+	var resp *http.Response
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err = http.Get(newURL)
+		if err == nil {
+			break
+		}
+		configs.ErrorLogger.Printf("Attempt %d: Error making HTTP request: %v\n", attempt, err)
+		time.Sleep(2 * time.Second)
+	}
+
 	if err != nil {
-		configs.ErrorLogger.Println("Error making HTTP request:", err)
+		configs.ErrorLogger.Println("Failed to make HTTP request after multiple attempts:", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -106,6 +118,10 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 
 	
 	for _, element := range data {
+		if element == nil{
+			configs.InfoLogger.Println("No Data for Deployment")
+			continue
+		}
 		deploymentMap := element.(map[string]interface{})
 
 		for _, DeploymentData := range deploymentMap {
@@ -117,11 +133,25 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 			}
 
 			properties := deploymentOne["properties"].(map[string]interface{})
-			labels := properties["labels"].(map[string]interface{})
-			region := labels["topology_kubernetes_io_region"].(string)
-
-			namespaceDeployment, ok := labels["kubernetes_io_metadata_name"].(string)
-			if !ok {
+			var labels map[string]interface{}
+			var region string
+			var namespaceDeployment string
+			
+			if value, ok := properties["labels"].(map[string]interface{}); ok {
+				labels = value
+				if val, ok := labels["topology_kubernetes_io_region"].(string); ok {
+					region = val
+				} else {
+					region = "" 
+				}
+			
+				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
+					namespaceDeployment = val
+				} else {
+					namespaceDeployment = "" 
+				}
+			} else {
+				region = ""
 				namespaceDeployment = ""
 			}
 
@@ -173,5 +203,4 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 	}
 
 	configs.InfoLogger.Println("Deployment data successfully written to S3")
-	wg.Done()
 }

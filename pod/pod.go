@@ -12,6 +12,7 @@ import (
 	"sync"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"time"
 )
 
 func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -28,10 +29,21 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 	q.Set("aggregate", "pod")
 	q.Set("accumulate", "true")
 	u.RawQuery = q.Encode()
+	newURL := u.String()
 
-	resp, err := http.Get(u.String())
+	var resp *http.Response
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err = http.Get(newURL)
+		if err == nil {
+			break
+		}
+		configs.ErrorLogger.Printf("Attempt %d: Error making HTTP request: %v\n", attempt, err)
+		time.Sleep(2 * time.Second)
+	}
+
 	if err != nil {
-		configs.ErrorLogger.Println("Error making HTTP request:", err)
+		configs.ErrorLogger.Println("Failed to make HTTP request after multiple attempts:", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -102,6 +114,10 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 	}
 
 	for _, element := range data {
+		if element == nil{
+			configs.InfoLogger.Println("No Data for Pod")
+			continue
+		}
 		podMap := element.(map[string]interface{})
 
 		for _, podData := range podMap {
@@ -115,14 +131,32 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 			properties := podOne["properties"].(map[string]interface{})
 			pod := properties["pod"].(string)
 
+			var labels map[string]interface{}
 			var region string
-			if name != "__idle__" {
-				labels := properties["labels"].(map[string]interface{})
-				region = labels["topology_kubernetes_io_region"].(string)
+			var namespacePod string
+			
+			if value, ok := properties["namespaceLabels"].(map[string]interface{}); ok {
+				labels = value
+				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
+					namespacePod = val
+				} else {
+					namespacePod = "" 
+				}
+			} else {
+				namespacePod = ""
 			}
 
-			namespaceLabels := properties["namespaceLabels"].(map[string]interface{})
-			namespacePod := namespaceLabels["kubernetes_io_metadata_name"].(string)
+			if value, ok := properties["labels"].(map[string]interface{}); ok {
+				labels = value
+				if val_region, ok := labels["topology_kubernetes_io_region"].(string); ok {
+					region = val_region
+				} else {
+					region = "" 
+				}
+			} else {
+				region = ""
+			}
+
 
 			window := podOne["window"].(map[string]interface{})
 			windowStart := window["start"].(string)
