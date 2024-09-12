@@ -115,6 +115,7 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Service")
 			continue
 		}
 		serviceMap := element.(map[string]interface{})

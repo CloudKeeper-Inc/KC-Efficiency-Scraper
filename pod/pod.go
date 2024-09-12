@@ -115,6 +115,7 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Pod")
 			continue
 		}
 		podMap := element.(map[string]interface{})

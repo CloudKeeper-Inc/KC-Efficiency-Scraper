@@ -117,6 +117,7 @@ func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Namespace")
 			continue
 		}
 		namespaceMap := element.(map[string]interface{})

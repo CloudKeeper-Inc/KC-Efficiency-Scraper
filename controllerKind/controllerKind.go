@@ -121,6 +121,7 @@ func FetchAndWriteControllerKindData(inputURL,clusterName, window, bucketName, r
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for ControllerKind")
 			continue
 		}
 		controllerKindMap := element.(map[string]interface{})

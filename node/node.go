@@ -115,6 +115,7 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Node")
 			continue
 		}
 		nodeMap := element.(map[string]interface{})

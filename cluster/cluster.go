@@ -119,6 +119,7 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Cluster")
 			continue
 		}
 		clusterMap := element.(map[string]interface{})

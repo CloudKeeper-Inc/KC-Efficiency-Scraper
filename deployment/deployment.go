@@ -119,6 +119,7 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 	
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Deployment")
 			continue
 		}
 		deploymentMap := element.(map[string]interface{})

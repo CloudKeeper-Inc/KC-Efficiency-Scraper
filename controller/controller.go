@@ -118,6 +118,7 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 
 	for _, element := range data {
 		if element == nil{
+			configs.InfoLogger.Println("No Data for Controller")
 			continue
 		}
 		controllerMap := element.(map[string]interface{})
