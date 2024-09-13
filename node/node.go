@@ -128,7 +128,7 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 				continue
 			}
 			properties := nodeOne["properties"].(map[string]interface{})
-			node := properties["node"].(string)
+
 
 			var labels map[string]interface{}
 			var region string
@@ -161,7 +161,7 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 			totalEfficiency := nodeOne["totalEfficiency"].(float64) * 100
 
 			record := []string{
-				node, clusterName, region, windowStart, windowEnd,
+				name, clusterName, region, windowStart, windowEnd,
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
