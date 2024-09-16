@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -104,7 +105,7 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 		header := []string{
 			"Node", "ClusterName", "Region", "Window Start", "Window End", 
 			"Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", 
-			"LoadBalancer Cost", "Shared Cost", "Total Cost", 
+			"LoadBalancer Cost", "Total Cost", 
 			"Cpu Efficiency", "Ram Efficiency", "Total Efficiency",
 		}
 		if err := writer.Write(header); err != nil {
@@ -154,7 +155,6 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 			pvCost := nodeOne["pvCost"].(float64)
 			networkCost := nodeOne["networkCost"].(float64)
 			loadBalancerCost := nodeOne["loadBalancerCost"].(float64)
-			sharedCost := nodeOne["sharedCost"].(float64)
 			totalCost := nodeOne["totalCost"].(float64)
 			cpuEfficiency := nodeOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := nodeOne["ramEfficiency"].(float64) * 100
@@ -165,7 +165,7 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -177,6 +177,19 @@ func FetchAndWriteNodeData(inputURL, clusterName, window, bucketName, region str
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
 		return
 	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Node.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file node.csv:", err)
+		return
+	}
+
 
 	_, err = svc.PutObject(&s3.PutObjectInput{
 		Bucket:      aws.String(bucketName),

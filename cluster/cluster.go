@@ -13,6 +13,7 @@ import (
 	"time"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"os"
 )
 
 func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -110,7 +111,7 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 
 
 	if !fileExists {
-		header := []string{"Cluster", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		header := []string{"Cluster", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
 		if err := writer.Write(header); err != nil {
 			configs.ErrorLogger.Println("Error writing header to CSV:", err)
 			return
@@ -127,10 +128,11 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 		for _, clusterData := range clusterMap {
 			clusterOne := clusterData.(map[string]interface{})
 
-			properties := clusterOne["properties"].(map[string]interface{})
-			cluster := properties["cluster"].(string)
-			if(cluster == "cluster-one"){
+			cluster := clusterOne["name"].(string)
+			if cluster == "cluster-one" {
 				cluster = clusterName
+			} else if cluster == "__idle__" {
+				cluster = fmt.Sprintf("__idle__(%v)", clusterName)
 			}
 
 
@@ -144,7 +146,6 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 			pvCost := clusterOne["pvCost"].(float64)
 			networkCost := clusterOne["networkCost"].(float64)
 			loadBalancerCost := clusterOne["loadBalancerCost"].(float64)
-			sharedCost := clusterOne["sharedCost"].(float64)
 			totalCost := clusterOne["totalCost"].(float64)
 			cpuEfficiency := clusterOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := clusterOne["ramEfficiency"].(float64) * 100
@@ -155,7 +156,7 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -168,6 +169,20 @@ func FetchAndWriteClusterData(inputURL,clusterName, window, bucketName, region s
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
 		return
 	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Cluster.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file cluster.csv:", err)
+		return
+	}
+
+	
 
 
 	_, err = svc.PutObject(&s3.PutObjectInput{

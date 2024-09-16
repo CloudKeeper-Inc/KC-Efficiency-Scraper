@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -104,7 +105,7 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 		header := []string{
 			"Pod", "ClusterName", "Region", "Namespace", "Window Start", "Window End",
 			"Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost",
-			"LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency",
+			"LoadBalancer Cost", "Total Cost", "Cpu Efficiency",
 			"Ram Efficiency", "Total Efficiency",
 		}
 		if err := writer.Write(header); err != nil {
@@ -129,19 +130,14 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 			}
 
 			properties := podOne["properties"].(map[string]interface{})
-			pod := properties["pod"].(string)
+			// pod := properties["pod"].(string)
 
 			var labels map[string]interface{}
 			var region string
 			var namespacePod string
 			
-			if value, ok := properties["namespaceLabels"].(map[string]interface{}); ok {
-				labels = value
-				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
-					namespacePod = val
-				} else {
-					namespacePod = "" 
-				}
+			if value, ok := properties["namespace"].(string); ok {
+				namespacePod = value
 			} else {
 				namespacePod = ""
 			}
@@ -168,18 +164,17 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 			pvCost := podOne["pvCost"].(float64)
 			networkCost := podOne["networkCost"].(float64)
 			loadBalancerCost := podOne["loadBalancerCost"].(float64)
-			sharedCost := podOne["sharedCost"].(float64)
 			totalCost := podOne["totalCost"].(float64)
 			cpuEfficiency := podOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := podOne["ramEfficiency"].(float64) * 100
 			totalEfficiency := podOne["totalEfficiency"].(float64) * 100
 
 			record := []string{
-				pod, clusterName, region, namespacePod, windowStart, windowEnd,
+				name, clusterName, region, namespacePod, windowStart, windowEnd,
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -189,6 +184,18 @@ func FetchAndWritePodData(inputURL, clusterName, window, bucketName, region stri
 
 	if err := writer.WriteAll(existingData); err != nil {
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
+		return
+	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Pod.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file pod.csv:", err)
 		return
 	}
 

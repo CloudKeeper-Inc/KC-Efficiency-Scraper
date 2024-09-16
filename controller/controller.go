@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, region string, wg *sync.WaitGroup) {
@@ -108,7 +109,7 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 
 
 	if !fileExists {
-		header := []string{"Controller","ClusterName", "Region", "Namespace", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		header := []string{"Controller","ClusterName", "Region", "Namespace", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
 		if err := writer.Write(header); err != nil {
 			configs.ErrorLogger.Println("Error writing header to CSV:", err)
 			return
@@ -137,13 +138,8 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 			var region string
 			var namespaceController string
 			
-			if value, ok := properties["namespaceLabels"].(map[string]interface{}); ok {
-				labels = value
-				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
-					namespaceController = val
-				} else {
-					namespaceController = "" 
-				}
+			if value, ok := properties["namespace"].(string); ok {
+				namespaceController = value
 			} else {
 				namespaceController = ""
 			}
@@ -169,7 +165,6 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 			pvCost := controllerOne["pvCost"].(float64)
 			networkCost := controllerOne["networkCost"].(float64)
 			loadBalancerCost := controllerOne["loadBalancerCost"].(float64)
-			sharedCost := controllerOne["sharedCost"].(float64)
 			totalCost := controllerOne["totalCost"].(float64)
 			cpuEfficiency := controllerOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := controllerOne["ramEfficiency"].(float64) * 100
@@ -180,7 +175,7 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -191,6 +186,18 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 
 	if err := writer.WriteAll(existingData); err != nil {
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
+		return
+	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Controller.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file controller.csv:", err)
 		return
 	}
 

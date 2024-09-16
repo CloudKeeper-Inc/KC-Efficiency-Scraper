@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string, wg *sync.WaitGroup) {
@@ -107,7 +108,7 @@ func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string
 
 
 	if !fileExists {
-		header := []string{"Namespace","ClusterName", "Region", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		header := []string{"Namespace","ClusterName", "Region", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
 		if err := writer.Write(header); err != nil {
 			configs.ErrorLogger.Println("Error writing header to CSV:", err)
 			return
@@ -134,7 +135,6 @@ func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string
 			
 			var labels map[string]interface{}
 			var region string
-			var namespace string
 			
 			if value, ok := properties["labels"].(map[string]interface{}); ok {
 				labels = value
@@ -144,14 +144,8 @@ func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string
 					region = "" 
 				}
 			
-				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
-					namespace = val
-				} else {
-					namespace = "" 
-				}
 			} else {
 				region = ""
-				namespace = ""
 			}
 
 			window := namespaceOne["window"].(map[string]interface{})
@@ -164,18 +158,17 @@ func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string
 			pvCost := namespaceOne["pvCost"].(float64)
 			networkCost := namespaceOne["networkCost"].(float64)
 			loadBalancerCost := namespaceOne["loadBalancerCost"].(float64)
-			sharedCost := namespaceOne["sharedCost"].(float64)
 			totalCost := namespaceOne["totalCost"].(float64)
 			cpuEfficiency := namespaceOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := namespaceOne["ramEfficiency"].(float64) * 100
 			totalEfficiency := namespaceOne["totalEfficiency"].(float64) * 100
 
 			record := []string{
-				namespace,clusterName, region, windowStart, windowEnd,
+				name,clusterName, region, windowStart, windowEnd,
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -186,6 +179,18 @@ func FetchAndWriteNamespaceData(inputURL, clusterName, window, bucketName string
 
 	if err := writer.WriteAll(existingData); err != nil {
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
+		return
+	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Namespace.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file namespace.csv:", err)
 		return
 	}
 
