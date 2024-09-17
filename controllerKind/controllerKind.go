@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 
@@ -111,7 +112,7 @@ func FetchAndWriteControllerKindData(inputURL,clusterName, window, bucketName, r
 
 
 	if !fileExists {
-		header := []string{"ControllerKind","ClusterName", "Region", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		header := []string{"ControllerKind","ClusterName", "Region", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
 		if err := writer.Write(header); err != nil {
 			configs.ErrorLogger.Println("Error writing header to CSV:", err)
 			return
@@ -159,7 +160,6 @@ func FetchAndWriteControllerKindData(inputURL,clusterName, window, bucketName, r
 			pvCost := controllerKindOne["pvCost"].(float64)
 			networkCost := controllerKindOne["networkCost"].(float64)
 			loadBalancerCost := controllerKindOne["loadBalancerCost"].(float64)
-			sharedCost := controllerKindOne["sharedCost"].(float64)
 			totalCost := controllerKindOne["totalCost"].(float64)
 			cpuEfficiency := controllerKindOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := controllerKindOne["ramEfficiency"].(float64) * 100
@@ -170,7 +170,7 @@ func FetchAndWriteControllerKindData(inputURL,clusterName, window, bucketName, r
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -181,6 +181,18 @@ func FetchAndWriteControllerKindData(inputURL,clusterName, window, bucketName, r
 
 	if err := writer.WriteAll(existingData); err != nil {
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
+		return
+	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/ControllerKind.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file controllerKind.csv:", err)
 		return
 	}
 

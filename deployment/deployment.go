@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -108,7 +109,7 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 			"Deployment", "ClusterName", "Region", "Namespace",
 			"Window Start", "Window End", "Cpu Cost", "Gpu Cost",
 			"Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost",
-			"Shared Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency",
+			"Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency",
 		}
 		if err := writer.Write(header); err != nil {
 			configs.ErrorLogger.Println("Error writing header to CSV:", err)
@@ -136,6 +137,12 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 			var labels map[string]interface{}
 			var region string
 			var namespaceDeployment string
+
+			if value, ok := properties["namespace"].(string); ok {
+				namespaceDeployment = value
+			} else {
+				namespaceDeployment = ""
+			}
 			
 			if value, ok := properties["labels"].(map[string]interface{}); ok {
 				labels = value
@@ -144,15 +151,8 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 				} else {
 					region = "" 
 				}
-			
-				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
-					namespaceDeployment = val
-				} else {
-					namespaceDeployment = "" 
-				}
 			} else {
 				region = ""
-				namespaceDeployment = ""
 			}
 
 			window := deploymentOne["window"].(map[string]interface{})
@@ -165,7 +165,6 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 			pvCost := deploymentOne["pvCost"].(float64)
 			networkCost := deploymentOne["networkCost"].(float64)
 			loadBalancerCost := deploymentOne["loadBalancerCost"].(float64)
-			sharedCost := deploymentOne["sharedCost"].(float64)
 			totalCost := deploymentOne["totalCost"].(float64)
 			cpuEfficiency := deploymentOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := deploymentOne["ramEfficiency"].(float64) * 100
@@ -176,7 +175,7 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -187,6 +186,18 @@ func FetchAndWriteDeploymentData(inputURL, clusterName, window, bucketName, regi
 	
 	if err := writer.WriteAll(existingData); err != nil {
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
+		return
+	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Deployment.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file deployment.csv:", err)
 		return
 	}
 

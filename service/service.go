@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"time"
+	"os"
 )
 
 func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -102,9 +103,9 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 
 	if !fileExists {
 		header := []string{
-			"Service", "Region", "Namespace", "Window Start", "Window End",
+			"Service","ClusterName", "Region", "Namespace", "Window Start", "Window End",
 			"Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost",
-			"LoadBalancer Cost", "Shared Cost", "Total Cost", "Cpu Efficiency",
+			"LoadBalancer Cost", "Total Cost", "Cpu Efficiency",
 			"Ram Efficiency", "Total Efficiency",
 		}
 		if err := writer.Write(header); err != nil {
@@ -134,13 +135,8 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 			var region string
 			var namespaceService string
 			
-			if value, ok := properties["namespaceLabels"].(map[string]interface{}); ok {
-				labels = value
-				if val, ok := labels["kubernetes_io_metadata_name"].(string); ok {
-					namespaceService = val
-				} else {
-					namespaceService = "" 
-				}
+			if value, ok := properties["namespace"].(string); ok {
+				namespaceService = value
 			} else {
 				namespaceService = ""
 			}
@@ -166,18 +162,17 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 			pvCost := serviceOne["pvCost"].(float64)
 			networkCost := serviceOne["networkCost"].(float64)
 			loadBalancerCost := serviceOne["loadBalancerCost"].(float64)
-			sharedCost := serviceOne["sharedCost"].(float64)
 			totalCost := serviceOne["totalCost"].(float64)
 			cpuEfficiency := serviceOne["cpuEfficiency"].(float64) * 100
 			ramEfficiency := serviceOne["ramEfficiency"].(float64) * 100
 			totalEfficiency := serviceOne["totalEfficiency"].(float64) * 100
 
 			record := []string{
-				name, region, namespaceService, windowStart, windowEnd,
+				name,clusterName ,region, namespaceService, windowStart, windowEnd,
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
-				fmt.Sprintf("%f", sharedCost), fmt.Sprintf("%f", totalCost),
+				fmt.Sprintf("%f", totalCost),
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
@@ -189,6 +184,19 @@ func FetchAndWriteServiceData(inputURL, clusterName, window, bucketName, region 
 		configs.ErrorLogger.Println("Error writing data to CSV:", err)
 		return
 	}
+
+	err = os.MkdirAll("Output", 0755)
+	if err != nil {
+		configs.ErrorLogger.Println("Error creating directory:", err)
+		return
+	}
+
+	err = os.WriteFile("Output/Service.csv", buffer.Bytes(), 0644)
+	if err != nil {
+		configs.ErrorLogger.Println("Error saving file service.csv:", err)
+		return
+	}
+
 
 	_, err = svc.PutObject(&s3.PutObjectInput{
 		Bucket:      aws.String(bucketName),
