@@ -9,14 +9,15 @@ import (
 	"kubecost-efficiency-fetcher/configs"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
+	"time"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"time"
-	"os"
 )
 
-func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, region string, wg *sync.WaitGroup) {
+func FetchAndWriteControllerData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
 
 	defer wg.Done()
 	u, err := url.Parse(inputURL)
@@ -55,7 +56,6 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 		return
 	}
 
-
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
 		configs.ErrorLogger.Println("Error unmarshalling JSON:", err)
@@ -63,29 +63,29 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 	}
 	configs.InfoLogger.Println("Status Code for Controller: ", result["code"])
 
-
 	data := result["data"].([]interface{})
-
 
 	svc := configs.Svc
 
-	objectKey := "Controller/Controller.csv"
-
+	objectKeyController := "Controller/Controller.csv"
+	objectKeyRollout := "Rollout/Rollout.csv"
 
 	existingData := [][]string{}
-	fileExists := false
+	rolloutData := [][]string{}
+	fileExistsController := false
+	fileExistsRollout := false
+
 	_, err = svc.HeadObject(&s3.HeadObjectInput{
 		Bucket: aws.String(bucketName),
-		Key:    aws.String(objectKey),
+		Key:    aws.String(objectKeyController),
 	})
 	if err == nil {
-
 		resp, err := svc.GetObject(&s3.GetObjectInput{
 			Bucket: aws.String(bucketName),
-			Key:    aws.String(objectKey),
+			Key:    aws.String(objectKeyController),
 		})
 		if err != nil {
-			configs.ErrorLogger.Println("Error fetching existing file from S3:", err)
+			configs.ErrorLogger.Println("Error fetching existing Controller file from S3:", err)
 			return
 		}
 		defer resp.Body.Close()
@@ -93,32 +93,63 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 		reader := csv.NewReader(resp.Body)
 		existingData, err = reader.ReadAll()
 		if err != nil {
-			configs.ErrorLogger.Println("Error reading existing CSV data:", err)
+			configs.ErrorLogger.Println("Error reading existing Controller CSV data:", err)
 			return
 		}
-		fileExists = true
+		fileExistsController = true
 	} else {
-
 		configs.InfoLogger.Println("No existing Controller.csv file found. A new one will be created.")
 	}
 
+	_, err = svc.HeadObject(&s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKeyRollout),
+	})
+	if err == nil {
+		resp, err := svc.GetObject(&s3.GetObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKeyRollout),
+		})
+		if err != nil {
+			configs.ErrorLogger.Println("Error fetching existing Rollout file from S3:", err)
+			return
+		}
+		defer resp.Body.Close()
 
-	var buffer bytes.Buffer
-	writer := csv.NewWriter(&buffer)
-	defer writer.Flush()
+		reader := csv.NewReader(resp.Body)
+		rolloutData, err = reader.ReadAll()
+		if err != nil {
+			configs.ErrorLogger.Println("Error reading existing Rollout CSV data:", err)
+			return
+		}
+		fileExistsRollout = true
+	} else {
+		configs.InfoLogger.Println("No existing Rollout.csv file found. A new one will be created.")
+	}
 
+	var bufferController, bufferRollout bytes.Buffer
+	writerController := csv.NewWriter(&bufferController)
+	writerRollout := csv.NewWriter(&bufferRollout)
+	defer writerController.Flush()
+	defer writerRollout.Flush()
 
-	if !fileExists {
-		header := []string{"Controller","ClusterName", "Region", "Namespace", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
-		if err := writer.Write(header); err != nil {
-			configs.ErrorLogger.Println("Error writing header to CSV:", err)
+	if !fileExistsController {
+		header := []string{"Controller", "ClusterName", "Region", "Namespace", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		if err := writerController.Write(header); err != nil {
+			configs.ErrorLogger.Println("Error writing header to Controller CSV:", err)
+			return
+		}
+	}
+	if !fileExistsRollout {
+		header := []string{"Rollout", "ClusterName", "Region", "Namespace", "Window Start", "Window End", "Cpu Cost", "Gpu Cost", "Ram Cost", "PV Cost", "Network Cost", "LoadBalancer Cost", "Total Cost", "Cpu Efficiency", "Ram Efficiency", "Total Efficiency"}
+		if err := writerRollout.Write(header); err != nil {
+			configs.ErrorLogger.Println("Error writing header to Rollout CSV:", err)
 			return
 		}
 	}
 
-
 	for _, element := range data {
-		if element == nil{
+		if element == nil {
 			configs.InfoLogger.Println("No Data for Controller")
 			continue
 		}
@@ -137,7 +168,7 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 			var labels map[string]interface{}
 			var region string
 			var namespaceController string
-			
+
 			if value, ok := properties["namespace"].(string); ok {
 				namespaceController = value
 			} else {
@@ -149,7 +180,7 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 				if val_region, ok := labels["topology_kubernetes_io_region"].(string); ok {
 					region = val_region
 				} else {
-					region = "" 
+					region = ""
 				}
 			} else {
 				region = ""
@@ -171,7 +202,7 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 			totalEfficiency := controllerOne["totalEfficiency"].(float64) * 100
 
 			record := []string{
-				name,clusterName, region, namespaceController, windowStart, windowEnd,
+				name, clusterName, region, namespaceController, windowStart, windowEnd,
 				fmt.Sprintf("%f", cpuCost), fmt.Sprintf("%f", gpuCost),
 				fmt.Sprintf("%f", ramCost), fmt.Sprintf("%f", pvCost),
 				fmt.Sprintf("%f", networkCost), fmt.Sprintf("%f", loadBalancerCost),
@@ -179,39 +210,68 @@ func FetchAndWriteControllerData(inputURL, clusterName ,window, bucketName, regi
 				fmt.Sprintf("%f", cpuEfficiency), fmt.Sprintf("%f", ramEfficiency),
 				fmt.Sprintf("%f", totalEfficiency),
 			}
+
 			existingData = append(existingData, record)
+
+			if strings.HasPrefix(name, "rollout:") {
+				nameWithoutRollout := strings.TrimPrefix(name, "rollout:")
+				
+				rolloutRecord := make([]string, len(record))
+				copy(rolloutRecord, record)                  
+				rolloutRecord[0] = nameWithoutRollout         
+				rolloutData = append(rolloutData, rolloutRecord)
+			}
+
 		}
+
+		if err := writerController.WriteAll(existingData); err != nil {
+			configs.ErrorLogger.Println("Error writing Controller data to CSV:", err)
+			return
+		}
+
+		if err := writerRollout.WriteAll(rolloutData); err != nil {
+			configs.ErrorLogger.Println("Error writing Rollout data to CSV:", err)
+			return
+		}
+
+		err = os.MkdirAll("Output", 0755)
+		if err != nil {
+			configs.ErrorLogger.Println("Error creating directory:", err)
+			return
+		}
+
+		err = os.WriteFile("Output/Controller.csv", bufferController.Bytes(), 0644)
+		if err != nil {
+			configs.ErrorLogger.Println("Error saving Controller.csv file locally:", err)
+			return
+		}
+
+		err = os.WriteFile("Output/Rollout.csv", bufferRollout.Bytes(), 0644)
+		if err != nil {
+			configs.ErrorLogger.Println("Error saving Rollout.csv file locally:", err)
+			return
+		}
+
+		_, err = svc.PutObject(&s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKeyController),
+			Body:   bytes.NewReader(bufferController.Bytes()),
+		})
+		if err != nil {
+			configs.ErrorLogger.Println("Error uploading Controller.csv file to S3:", err)
+			return
+		}
+
+		_, err = svc.PutObject(&s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(objectKeyRollout),
+			Body:   bytes.NewReader(bufferRollout.Bytes()),
+		})
+		if err != nil {
+			configs.ErrorLogger.Println("Error uploading Rollout.csv file to S3:", err)
+			return
+		}
+
+		configs.InfoLogger.Println("Controller and Rollout data successfully written to S3.")
 	}
-
-
-	if err := writer.WriteAll(existingData); err != nil {
-		configs.ErrorLogger.Println("Error writing data to CSV:", err)
-		return
-	}
-
-	err = os.MkdirAll("Output", 0755)
-	if err != nil {
-		configs.ErrorLogger.Println("Error creating directory:", err)
-		return
-	}
-
-	err = os.WriteFile("Output/Controller.csv", buffer.Bytes(), 0644)
-	if err != nil {
-		configs.ErrorLogger.Println("Error saving file controller.csv:", err)
-		return
-	}
-
-
-	_, err = svc.PutObject(&s3.PutObjectInput{
-		Bucket:      aws.String(bucketName),
-		Key:         aws.String(objectKey),
-		Body:        bytes.NewReader(buffer.Bytes()),
-		ContentType: aws.String("text/csv"),
-	})
-	if err != nil {
-		configs.ErrorLogger.Println("Error uploading updated CSV to S3:", err)
-		return
-	}
-
-	configs.InfoLogger.Println("Controller data successfully written to S3")
 }
