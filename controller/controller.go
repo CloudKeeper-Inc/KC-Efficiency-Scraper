@@ -15,6 +15,7 @@ import (
 	"time"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"regexp"
 )
 
 func FetchAndWriteControllerData(inputURL, clusterName, window, bucketName, region string, wg *sync.WaitGroup) {
@@ -148,6 +149,9 @@ func FetchAndWriteControllerData(inputURL, clusterName, window, bucketName, regi
 		}
 	}
 
+	// Regex to match and remove the last hyphen followed by 10 alphanumeric characters i.e the container id
+	re := regexp.MustCompile(`-[a-f0-9]{10}$`)
+
 	for _, element := range data {
 		if element == nil {
 			configs.InfoLogger.Println("No Data for Controller")
@@ -215,10 +219,11 @@ func FetchAndWriteControllerData(inputURL, clusterName, window, bucketName, regi
 
 			if strings.HasPrefix(name, "rollout:") {
 				nameWithoutRollout := strings.TrimPrefix(name, "rollout:")
+				nameWithoutRolloutSuffix := re.ReplaceAllString(nameWithoutRollout, "")
 				
 				rolloutRecord := make([]string, len(record))
 				copy(rolloutRecord, record)                  
-				rolloutRecord[0] = nameWithoutRollout         
+				rolloutRecord[0] = nameWithoutRolloutSuffix         
 				rolloutData = append(rolloutData, rolloutRecord)
 			}
 
